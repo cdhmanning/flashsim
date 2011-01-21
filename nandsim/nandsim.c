@@ -376,22 +376,43 @@ static uint8_t nandsim_dl_read(struct nandsim_private *ns)
 }
 
 
-static void nandsim_init_private(struct nandsim_private *ns)
+static struct nandsim_private *
+nandsim_init_private(const char *fname,
+				int blocks,
+				int pages_per_block,
+				int data_bytes_per_page,
+				int spare_bytes_per_page)
 {
 	int fsize;
 	int nbytes;
 	int i;
+	struct nandsim_private *ns;
 
+	ns = malloc(sizeof(struct nandsim_private));
+	if(!ns)
+		return NULL;
 	memset(ns, 0, sizeof(struct nandsim_private));
 
 	idle(ns, __LINE__);
+
+	ns->blocks = blocks;
+	ns->pages_per_block = pages_per_block;
+	ns->data_bytes_per_page = data_bytes_per_page;
+	ns->spare_bytes_per_page = spare_bytes_per_page;
+	ns->buff_size = (ns->data_bytes_per_page + ns->spare_bytes_per_page);
+	ns->buffer = malloc(ns->buff_size);
+	if(!ns->buffer)
+		goto out;
+
+	strncpy(ns->backing_file, fname, sizeof(ns->backing_file));
 
 	ns->handle = open(ns->backing_file, O_RDWR | O_CREAT);
 	if(ns->handle >=0){
 		fsize = lseek(ns->handle,0,SEEK_END);
 		nbytes = ns->blocks * ns->pages_per_block *
 			(ns->data_bytes_per_page + ns->spare_bytes_per_page);
-		if (fsize < nbytes) {
+		if (fsize != nbytes) {
+			printf("Initialising backing file.\n");
 			ftruncate(ns->handle,0);
 			lseek(ns->handle, 0, SEEK_SET);
 			memset(ns->buffer, 0xff, ns->buff_size);
@@ -399,7 +420,12 @@ static void nandsim_init_private(struct nandsim_private *ns)
 				write(ns->handle, ns->buffer,
 					i < ns->buff_size ? i : ns->buff_size);
 		}
+		return ns;
 	}
+
+out:
+	free(ns);
+	return NULL;
 }
 
 
@@ -478,12 +504,13 @@ struct nand_chip *nandsim_init(const char *fname,
 	struct nandsim_private *ns = NULL;
 
 	chip = malloc(sizeof(struct nand_chip));
-	ns = malloc(sizeof(struct nandsim_private));
+	ns = nandsim_init_private(fname, blocks,
+				pages_per_block,
+				data_bytes_per_page,
+				spare_bytes_per_page);
 
 	if(chip && ns){
-		memset(chip, 0, sizeof(struct nand_chip));
-
-		nandsim_init_private(ns);
+		memset(chip, 0, sizeof(struct nand_chip));;
 
 		chip->private_data = ns;
 		chip->set_ale = nandsim_set_ale;
