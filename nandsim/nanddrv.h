@@ -17,8 +17,10 @@
 #define __NAND_DRIVER_H__
 #include "nand_chip.h"
 
-int nanddrv_read(struct nand_chip *this, int page, int offset, int n_bytes, char *buffer);
-int nanddrv_write(struct nand_chip *this, int page, int offset, int n_bytes, const char *buffer);
+int nanddrv_read(struct nand_chip *this, int page, int offset,
+		unsigned char *buffer, int n_bytes);
+int nanddrv_write(struct nand_chip *this, int page, int offset,
+		const unsigned char *buffer, int n_bytes);
 int nanddrv_erase(struct nand_chip *this, int block);
 
 #endif

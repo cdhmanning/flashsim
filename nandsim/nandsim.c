@@ -37,14 +37,20 @@
 #include <stdlib.h>
 
 
-struct nandsim_private {
-	char backing_file[500];
-	int handle;
+#if 0
+#define debug(n, fmt, ...) \
+	do { \
+	if(n > 0) \
+		printf(fmt, ## __VA_ARGS__); \
+	} while(0)
 
-	int blocks;
-	int pages_per_block;
-	int data_bytes_per_page;
-	int spare_bytes_per_page;
+#else
+#define debug(n, fmt, ...) do {} while(0)
+#endif
+
+struct nandsim_private {
+
+	struct nand_store *store;
 
 	/*
 	* Access buffers.
@@ -53,10 +59,10 @@ struct nandsim_private {
 	* 3 byte row (page) offset
 	*/
 
-	uint8_t *buffer;
-	uint8_t buff_size;
+	unsigned char *buffer;
+	int buff_size;
 
-	uint8_t addr_buffer[5];
+	unsigned char addr_buffer[5];
 
 	/*
 	* Offsets used to access address, read or write buffer.
@@ -65,8 +71,11 @@ struct nandsim_private {
 
 	int addr_offset;
 	int addr_expected;
+	int addr_received;
+
 	int read_offset;
 	int write_offset;
+	int read_started;
 
 	/*
 	* busy_count: If greater than zero then the device is busy.
@@ -75,21 +84,21 @@ struct nandsim_private {
 	int busy_count;
 	int write_prog_error;
 	int reading_status;
-	uint8_t last_cmd_byte;
+	unsigned char last_cmd_byte;
 
 	int ale;
 	int cle;
 };
 
-static void last_cmd(struct nandsim_private *ns, uint8_t val)
+static void last_cmd(struct nandsim_private *ns, unsigned char val)
 {
 	ns->last_cmd_byte = val;
 }
 
-static void check_last(struct nandsim_private *ns, uint8_t should_be, int line)
+static void check_last(struct nandsim_private *ns, unsigned char should_be, int line)
 {
 	if(ns->last_cmd_byte != should_be)
-		printf("At line %d:, last_cmd should be %02x, but is %02x\n",
+		debug(1, "At line %d:, last_cmd should be %02x, but is %02x\n",
 			line, should_be, ns->last_cmd_byte);
 }
 
@@ -99,9 +108,11 @@ static void idle(struct nandsim_private *ns, int line)
 	ns->write_offset = -1;
 	ns->addr_offset = -1;
 	ns->addr_expected = -1;
+	ns->addr_received = -1;
 	last_cmd(ns, 0xff);
 	ns->busy_count = 0;
 	ns->reading_status = 0;
+	ns->read_started = 0;
 }
 
 
@@ -113,19 +124,64 @@ static void expect_address(struct nandsim_private *ns, int nbytes, int line)
 	case 5:
 		ns->addr_offset = 5 - nbytes;
 		ns->addr_expected = nbytes;
+		ns->addr_received = 0;
+		debug(1, "Expect %d address bytes\n",nbytes);
 		break;
 	default:
-		printf("expect_address illegal value %d called at line %d\n",
+		debug(1, "expect_address illegal value %d called at line %d\n",
 			nbytes, line);
 	}
 }
 
+static int get_page_address(struct nandsim_private *ns)
+{
+	int addr;
+
+	addr = (ns->addr_buffer[2]) |
+		(ns->addr_buffer[3] << 8) |
+		(ns->addr_buffer[4] << 16);
+	return addr;
+}
+
+static int get_page_offset(struct nandsim_private *ns)
+{
+	int offs;
+
+	offs = (ns->addr_buffer[0]) |
+		(ns->addr_buffer[1] << 8);
+	return offs;
+}
+
 static void check_address(struct nandsim_private *ns, int nbytes, int line)
 {
+	if(ns->addr_expected != 0)
+		debug(1, "Still expecting %d address bytes at line: %d\n",
+					ns->addr_expected, line);
+	if(ns->addr_received != nbytes)
+		debug(1, "Only received %d address bytes instead of %d at line %d\n",
+					ns->addr_received, nbytes, line);
+}
+
+static void set_offset(struct nandsim_private *ns)
+{
+	ns->read_offset = -1;
+	ns->write_offset = -1;
+
+	if(ns->last_cmd_byte == 0x80 )
+		ns->write_offset = get_page_offset(ns);
+	else if(ns->last_cmd_byte == 0x00)
+		ns->read_offset = get_page_offset(ns);
+	debug(1, "Buffer offsets set to read %d write %d\n",
+			ns->read_offset, ns->write_offset);
 }
 
 static void load_read_buffer(struct nandsim_private *ns)
 {
+	ns->store->retrieve(ns->store, get_page_address(ns),ns->buffer);
+}
+static void save_write_buffer(struct nandsim_private *ns)
+{
+	ns->store->store(ns->store, get_page_address(ns),ns->buffer);
 }
 
 static void check_read_buffer(struct nandsim_private *ns, int line)
@@ -134,14 +190,19 @@ static void check_read_buffer(struct nandsim_private *ns, int line)
 
 static void end_cmd(struct nandsim_private *ns, int line)
 {
+	ns->last_cmd_byte = 0xff;
 }
 
 static void set_busy(struct nandsim_private *ns, int cycles, int line)
 {
+	ns->busy_count = cycles;
 }
 
-static void check_not_busy(struct nandsim_private *ns, int line)
+static int check_not_busy(struct nandsim_private *ns, int line)
 {
+	if(ns->busy_count > 0)
+		debug(1, "Busy check failed at line %d\n",line);
+	return (ns->busy_count < 1);
 }
 
 /*
@@ -185,17 +246,28 @@ static void reset_0(struct nandsim_private *ns)
 static void read_0(struct nandsim_private *ns)
 {
 	check_last(ns, 0xff, __LINE__);
-	check_not_busy(ns, __LINE__);
+	if(check_not_busy(ns, __LINE__))
+		ns->reading_status = 0;
 	expect_address(ns, 5, __LINE__);
 	last_cmd(ns, 0x00);
+	ns->read_started = 1;
 }
 
 static void read_1(struct nandsim_private *ns)
 {
-	check_last(ns, 0x00, __LINE__);
-	check_address(ns, 5, __LINE__);
-	load_read_buffer(ns);
-	set_busy(ns, 2, __LINE__);
+	if(check_not_busy(ns, __LINE__))
+		ns->reading_status = 0;
+	if(ns->read_started){
+		/* Doing a read */
+		ns->read_started = 0;
+		check_address(ns, 5, __LINE__);
+		load_read_buffer(ns);
+		set_busy(ns, 2, __LINE__);
+		end_cmd(ns, __LINE__);
+	} else {
+		/* reenter read mode after a status check */
+		end_cmd(ns, __LINE__);
+	}
 }
 
 /*
@@ -206,16 +278,21 @@ static void read_1(struct nandsim_private *ns)
 static void program_0(struct nandsim_private *ns)
 {
 	check_last(ns, 0xff, __LINE__);
-	check_not_busy(ns, __LINE__);
+	if(check_not_busy(ns, __LINE__))
+		ns->reading_status = 0;
 	expect_address(ns, 5, __LINE__);
 	last_cmd(ns, 0x80);
 }
 
 static void program_1(struct nandsim_private *ns)
 {
+	if(check_not_busy(ns, __LINE__))
+		ns->reading_status = 0;
 	check_last(ns, 0x80, __LINE__);
 	check_address(ns, 5, __LINE__);
+	save_write_buffer(ns);
 	set_busy(ns, 2, __LINE__);
+	end_cmd(ns, __LINE__);
 }
 
 /*
@@ -226,7 +303,8 @@ static void program_1(struct nandsim_private *ns)
 static void random_data_output_0(struct nandsim_private *ns)
 {
 	check_last(ns, 0xff, __LINE__);
-	check_not_busy(ns, __LINE__);
+	if(check_not_busy(ns, __LINE__))
+		ns->reading_status = 0;
 	check_read_buffer(ns, __LINE__);
 	expect_address(ns, 2, __LINE__);
 	last_cmd(ns, 0x05);
@@ -245,7 +323,8 @@ static void random_data_output_1(struct nandsim_private *ns)
 static void block_erase_0(struct nandsim_private *ns)
 {
 	check_last(ns, 0xff, __LINE__);
-	check_not_busy(ns, __LINE__);
+	if(check_not_busy(ns, __LINE__))
+		ns->reading_status = 0;
 	expect_address(ns, 3, __LINE__);
 	last_cmd(ns, 0x60);
 }
@@ -253,8 +332,12 @@ static void block_erase_0(struct nandsim_private *ns)
 static void block_erase_1(struct nandsim_private *ns)
 {
 	check_last(ns, 0x60, __LINE__);
+	if(check_not_busy(ns, __LINE__))
+		ns->reading_status = 0;
 	check_address(ns, 3, __LINE__);
 	set_busy(ns, 5, __LINE__);
+	ns->store->erase(ns->store, get_page_address(ns));
+	end_cmd(ns, __LINE__);
 }
 /*
  * Read stuatus
@@ -277,7 +360,7 @@ static void unsupported(struct nandsim_private *ns)
 {
 }
 
-static void nandsim_cl_write(struct nandsim_private *ns, uint8_t val)
+static void nandsim_cl_write(struct nandsim_private *ns, unsigned char val)
 {
 	switch(val){
 		case 0x00:
@@ -323,36 +406,48 @@ static void nandsim_cl_write(struct nandsim_private *ns, uint8_t val)
 			reset_0(ns);
 			break;
 		default:
-			printf("CLE written with invalid value %02X.\n",val);
+			debug(1, "CLE written with invalid value %02X.\n",val);
 			break;
 			/* Valid codes that we don't handle */
-			printf("CLE written with invalid value %02X.\n",val);
+			debug(1, "CLE written with invalid value %02X.\n",val);
 	}
 }
 
 
-static void nandsim_al_write(struct nandsim_private *ns, uint8_t val)
+static void nandsim_al_write(struct nandsim_private *ns, unsigned char val)
 {
 	check_not_busy(ns, __LINE__);
-    	if(ns->addr_expected < 1 ||
+	if(ns->addr_expected < 1 ||
 		ns->addr_offset < 0 ||
 		ns->addr_offset >= sizeof(ns->addr_buffer)){
-		printf("Address write when not expected");
+		debug(1, "Address write when not expected\n");
 	} else {
+		debug(1, "Address write when expecting %d bytes\n",
+			ns->addr_expected);
 		ns->addr_buffer[ns->addr_offset] = val;
 		ns->addr_offset++;
-	    	ns->addr_expected--;
+		ns->addr_received++;
+		ns->addr_expected--;
+		if(ns->addr_expected == 0)
+			set_offset(ns);
 	}
 }
 
-static void nandsim_dl_write(struct nandsim_private *ns, uint8_t val)
+static void nandsim_dl_write(struct nandsim_private *ns, unsigned char val)
 {
 	check_not_busy(ns, __LINE__);
+	if( ns->write_offset < 0 || ns->write_offset >= ns->buff_size){
+		debug(1, "Write at illegal buffer offset %d\n",
+				ns->write_offset);
+	} else {
+		ns->buffer[ns->write_offset] = val;
+		ns->write_offset++;
+	}
 }
 
-static uint8_t nandsim_dl_read(struct nandsim_private *ns)
+static unsigned char nandsim_dl_read(struct nandsim_private *ns)
 {
-	uint8_t retval;
+	unsigned char retval;
 	if(ns->reading_status){
 		retval = 0xff;
 		if(ns->busy_count > 0){
@@ -361,11 +456,12 @@ static uint8_t nandsim_dl_read(struct nandsim_private *ns)
 		}
 		if(ns->write_prog_error)
 			retval &= ~(1<<7);
+		debug(1, "Read status returning %02X\n",retval);
 	} else if(ns->busy_count > 0){
-		printf("Read while still busy");
+		debug(1, "Read while still busy\n");
 		retval = 0;
 	} else if(ns->read_offset < 0 || ns->read_offset >= ns->buff_size){
-		printf("Read with no data available");
+		debug(1, "Read with no data available\n");
 		retval = 0;
 	} else {
 		retval = ns->buffer[ns->read_offset];
@@ -377,55 +473,28 @@ static uint8_t nandsim_dl_read(struct nandsim_private *ns)
 
 
 static struct nandsim_private *
-nandsim_init_private(const char *fname,
-				int blocks,
-				int pages_per_block,
-				int data_bytes_per_page,
-				int spare_bytes_per_page)
+nandsim_init_private(struct nand_store *store)
 {
-	int fsize;
-	int nbytes;
-	int i;
 	struct nandsim_private *ns;
+	unsigned char *buffer;
+	int buff_size;
+
+	buff_size = (store->data_bytes_per_page + store->spare_bytes_per_page);
 
 	ns = malloc(sizeof(struct nandsim_private));
-	if(!ns)
+	buffer = malloc(buff_size);
+	if(!ns || !buffer){
+		free(ns);
+		free(buffer);
 		return NULL;
-	memset(ns, 0, sizeof(struct nandsim_private));
-
-	idle(ns, __LINE__);
-
-	ns->blocks = blocks;
-	ns->pages_per_block = pages_per_block;
-	ns->data_bytes_per_page = data_bytes_per_page;
-	ns->spare_bytes_per_page = spare_bytes_per_page;
-	ns->buff_size = (ns->data_bytes_per_page + ns->spare_bytes_per_page);
-	ns->buffer = malloc(ns->buff_size);
-	if(!ns->buffer)
-		goto out;
-
-	strncpy(ns->backing_file, fname, sizeof(ns->backing_file));
-
-	ns->handle = open(ns->backing_file, O_RDWR | O_CREAT);
-	if(ns->handle >=0){
-		fsize = lseek(ns->handle,0,SEEK_END);
-		nbytes = ns->blocks * ns->pages_per_block *
-			(ns->data_bytes_per_page + ns->spare_bytes_per_page);
-		if (fsize != nbytes) {
-			printf("Initialising backing file.\n");
-			ftruncate(ns->handle,0);
-			lseek(ns->handle, 0, SEEK_SET);
-			memset(ns->buffer, 0xff, ns->buff_size);
-			for(i = nbytes; i > 0; i-=  ns->buff_size)
-				write(ns->handle, ns->buffer,
-					i < ns->buff_size ? i : ns->buff_size);
-		}
-		return ns;
 	}
 
-out:
-	free(ns);
-	return NULL;
+	memset(ns, 0, sizeof(struct nandsim_private));
+	ns->buffer = buffer;
+	ns->buff_size = buff_size;
+	ns->store = store;
+	idle(ns, __LINE__);
+	return ns;
 }
 
 
@@ -443,27 +512,43 @@ static void nandsim_set_cle(struct nand_chip * this, int cle)
 	ns->cle = cle;
 }
 
-static char nandsim_read_cycle(struct nand_chip * this)
+static unsigned char nandsim_read_cycle(struct nand_chip * this)
 {
+	unsigned char retval;
 	struct nandsim_private *ns =
 		(struct nandsim_private *)this->private_data;
 
 	if (ns->cle || ns->ale){
-		printf("Read cycle with CLE %s and ALE %s\n",
+		debug(1, "Read cycle with CLE %s and ALE %s\n",
 			ns->cle ? "high" : "low",
 			ns->ale ? "high" : "low");
-		return 0;
+		retval = 0;
 	} else {
-		return nandsim_dl_read(ns);
+		retval =nandsim_dl_read(ns);
 	}
+	debug(1, "Read cycle returning %02X\n",retval);
+	return retval;
 }
 
-static void nandsim_write_cycle(struct nand_chip * this, char b)
+static void nandsim_write_cycle(struct nand_chip * this, unsigned char b)
 {
 	struct nandsim_private *ns =
 		(struct nandsim_private *)this->private_data;
+	const char *x;
+
+	if(ns->ale && ns->cle)
+		x = "ALE AND CLE";
+	else if (ns->ale)
+		x = "ALE";
+	else if (ns->cle)
+		x = "CLE";
+	else
+		x = "data";
+
+	debug(1, "Write %02x to %s\n",
+			b, x);
 	if (ns->cle && ns->ale)
-		printf("Write cycle with both ALE and CLE high\n");
+		debug(1, "Write cycle with both ALE and CLE high\n");
 	else if (ns->cle)
 		nandsim_cl_write(ns, b);
 	else if (ns->ale)
@@ -480,8 +565,10 @@ static int nandsim_check_busy(struct nand_chip * this)
 
 	if (ns->busy_count> 0){
 		ns->busy_count--;
+		debug(1, "Still busy\n");
 		return 1;
 	} else {
+		debug(1, "Not busy\n");
 		return 0;
 	}
 }
@@ -490,24 +577,16 @@ static void nandsim_idle_fn(struct nand_chip *this)
 {
 	struct nandsim_private *ns =
 		(struct nandsim_private *)this->private_data;
-
 	ns = ns;
 }
 
-struct nand_chip *nandsim_init(const char *fname,
-				int blocks,
-				int pages_per_block,
-				int data_bytes_per_page,
-				int spare_bytes_per_page)
+struct nand_chip *nandsim_init(struct nand_store *store)
 {
 	struct nand_chip *chip = NULL;
 	struct nandsim_private *ns = NULL;
 
 	chip = malloc(sizeof(struct nand_chip));
-	ns = nandsim_init_private(fname, blocks,
-				pages_per_block,
-				data_bytes_per_page,
-				spare_bytes_per_page);
+	ns = nandsim_init_private(store);
 
 	if(chip && ns){
 		memset(chip, 0, sizeof(struct nand_chip));;
@@ -520,10 +599,10 @@ struct nand_chip *nandsim_init(const char *fname,
 		chip->check_busy = nandsim_check_busy;
 		chip->idle_fn = nandsim_idle_fn;
 
-		chip->blocks = ns->blocks;
-		chip->pages_per_block = ns->pages_per_block;
-		chip->data_bytes_per_page = ns->data_bytes_per_page;
-		chip->spare_bytes_per_page = ns->spare_bytes_per_page;
+		chip->blocks = ns->store->blocks;
+		chip->pages_per_block = ns->store->pages_per_block;
+		chip->data_bytes_per_page = ns->store->data_bytes_per_page;
+		chip->spare_bytes_per_page = ns->store->spare_bytes_per_page;
 
 		return chip;
 	} else {

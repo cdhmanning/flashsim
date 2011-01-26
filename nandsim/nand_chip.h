@@ -21,8 +21,8 @@ struct nand_chip {
 
 	void (*set_ale)(struct nand_chip * this, int high);
 	void (*set_cle)(struct nand_chip * this, int high);
-	char(*read_cycle)(struct nand_chip * this);
-	void (*write_cycle)(struct nand_chip * this, char b);
+	unsigned char(*read_cycle)(struct nand_chip * this);
+	void (*write_cycle)(struct nand_chip * this, unsigned char b);
 	int (*check_busy)(struct nand_chip * this);
 	void (*idle_fn) (struct nand_chip *this);
 

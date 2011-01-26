@@ -36,7 +36,7 @@ static void nanddrv_send_addr(struct nand_chip *this, int page, int offset)
 	this->set_ale(this,0);
 }
 
-static void nanddrv_send_cmd(struct nand_chip *this, char cmd)
+static void nanddrv_send_cmd(struct nand_chip *this, unsigned char cmd)
 {
 	this->set_cle(this, 1);
 	this->write_cycle(this, cmd);
@@ -45,43 +45,61 @@ static void nanddrv_send_cmd(struct nand_chip *this, char cmd)
 
 static int nanddrv_wait_not_busy(struct nand_chip *this)
 {
-	if(this->check_busy){
-		while(this->check_busy(this)){
-			if(this->idle_fn)
-				this->idle_fn(this);
-		}
-		return 0;
-	} else {
-		nanddrv_send_cmd(this, 0x70);
-		while(this->read_cycle(this) & 1){
-			if(this->idle_fn)
-				this->idle_fn(this);
-		}
-		return 1;
-	}
+	unsigned char status;
+
+	nanddrv_send_cmd(this, 0x70);
+	do {
+		status = this->read_cycle(this);
+	} while ((status &  (1 << 6)) == 0);
+	return 0;
 }
 
 int nanddrv_read(struct nand_chip *this, int page, int offset,
-		int n_bytes, char *buffer)
+		unsigned char *buffer, int n_bytes)
 {
 	nanddrv_send_cmd(this, 0x00);
-	nanddrv_send_addr(this, page, n_bytes);
+	nanddrv_send_addr(this, page, offset);
 	nanddrv_send_cmd(this, 0x30);
+	nanddrv_wait_not_busy(this);
+	nanddrv_send_cmd(this, 0x30);
+	while(n_bytes > 0) {
+		*buffer = this->read_cycle(this);
+		n_bytes--;
+		buffer++;
+	}
+	return 0;
+}
+/*
+ * Program page
+ * Cmd: 0x80, 5-byte address, data bytes,  Cmd: 0x10, wait not busy
+ */
+int nanddrv_write(struct nand_chip *this, int page, int offset,
+		const unsigned char *buffer, int n_bytes)
+{
+	nanddrv_send_cmd(this, 0x80);
+	nanddrv_send_addr(this, page, offset);
+	while(n_bytes > 0) {
+		this->write_cycle(this, *buffer);
+		n_bytes--;
+		buffer++;
+	}
+	nanddrv_send_cmd(this, 0x10);
+	nanddrv_wait_not_busy(this);
+	return 0;
+}
+
+/*
+ * Block erase
+ * Cmd: 0x60, 3-byte address, cmd: 0xD0. Wait not busy.
+ */
+int nanddrv_erase(struct nand_chip *this, int block)
+{
+ 	nanddrv_send_cmd(this, 0x60);
+	nanddrv_send_addr(this, block * this->pages_per_block, -1);
+	nanddrv_send_cmd(this, 0xD0);
 	if(nanddrv_wait_not_busy(this))
 		nanddrv_send_cmd(this, 0x30);
 	return 0;
-
-}
-
-int nanddrv_write(struct nand_chip *this, int page, int offset,
-		int n_bytes, const char *buffer)
-{
-	return -1;
-}
-
-int nanddrv_erase(struct nand_chip *this, int block)
-{
-	return -1;
 }
 
 

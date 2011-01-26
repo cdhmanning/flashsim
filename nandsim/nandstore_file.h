@@ -13,9 +13,16 @@
  * Note: Only YAFFS headers are LGPL, YAFFS C code is covered by GPL.
  */
 
-#ifndef __NAND_SIM_H__
-#define __NAND_SIM_H__
+#ifndef __NAND_STORE_FILE_H__
+#define __NAND_STORE_FILE_H__
+
 #include "nand_store.h"
-#include "nand_chip.h"
-struct nand_chip *nandsim_init(struct nand_store *store);
+
+struct nand_store *
+nandstore_file_init(const char *fname,
+				int blocks,
+				int pages_per_block,
+				int data_bytes_per_page,
+				int spare_bytes_per_page);
+
 #endif

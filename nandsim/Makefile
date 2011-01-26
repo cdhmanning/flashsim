@@ -7,7 +7,7 @@ CFLAGS+=   -Werror=strict-prototypes -Werror=missing-parameter-type
 CFLAGS+=   -Werror=redundant-decls -Werror=nested-externs -Winline
 CFLAGS+=   -Werror=undef
 
-NANDSIMOBJS = nandsim.o nanddrv.o
+NANDSIMOBJS = nandsim.o nanddrv.o nandsim_file.o nandstore_file.o
 SIMTESTOBJS = nandsim_test.o
 
 ALLOBJS = $(sort $(NANDSIMOBJS) $(SIMTESTOBJS))
