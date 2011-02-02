@@ -1,7 +1,7 @@
 /*
  * YAFFS: Yet another Flash File System . A NAND-flash specific file system.
  *
- * Copyright (C) 2002-2010 Aleph One Ltd.
+ * Copyright (C) 2002-2011 Aleph One Ltd.
  *   for Toby Churchill Ltd and Brightstar Engineering
  *
  * Created by Charles Manning <charles@aleph1.co.uk>
@@ -17,10 +17,16 @@
 #define __NAND_DRIVER_H__
 #include "nand_chip.h"
 
-int nanddrv_read(struct nand_chip *this, int page, int offset,
-		unsigned char *buffer, int n_bytes);
-int nanddrv_write(struct nand_chip *this, int page, int offset,
-		const unsigned char *buffer, int n_bytes);
+struct nanddrv_transfer {
+	unsigned char *buffer;
+	int offset;
+	int nbytes;
+};
+
+int nanddrv_read_tr(struct nand_chip *this, int page,
+		struct nanddrv_transfer *tr, int n_tr);
+int nanddrv_write_tr(struct nand_chip *this, int page,
+		struct nanddrv_transfer *tr, int n_tr);
 int nanddrv_erase(struct nand_chip *this, int block);
 
 #endif

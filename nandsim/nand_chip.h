@@ -1,7 +1,7 @@
 /*
  * YAFFS: Yet another Flash File System . A NAND-flash specific file system.
  *
- * Copyright (C) 2002-2010 Aleph One Ltd.
+ * Copyright (C) 2002-2011 Aleph One Ltd.
  *   for Toby Churchill Ltd and Brightstar Engineering
  *
  * Created by Charles Manning <charles@aleph1.co.uk>
@@ -25,6 +25,7 @@ struct nand_chip {
 	void (*write_cycle)(struct nand_chip * this, unsigned char b);
 	int (*check_busy)(struct nand_chip * this);
 	void (*idle_fn) (struct nand_chip *this);
+	int (*power_check) (struct nand_chip *this);
 
 	int blocks;
 	int pages_per_block;
