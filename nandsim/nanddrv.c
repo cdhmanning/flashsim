@@ -2,7 +2,6 @@
  * YAFFS: Yet Another Flash File System. A NAND-flash specific file system.
  *
  * Copyright (C) 2010-2011 Aleph One Ltd.
- *   for Toby Churchill Ltd and Brightstar Engineering
  *
  * Created by Charles Manning <charles@aleph1.co.uk>
  *
@@ -62,11 +61,11 @@ static unsigned char nanddrv_get_status(struct nand_chip *this,
 	unsigned char status;
 
 	nanddrv_send_cmd(this, 0x70);
-	status = this->read_cycle(this);
+	status = this->read_cycle(this) & 0xff;
 	if(!wait_not_busy)
 		return status;
 	while (nanddrv_status_busy(status)) {
-		status = this->read_cycle(this);
+		status = this->read_cycle(this) & 0xff;
 	}
 	return status;
 }
@@ -74,7 +73,7 @@ int nanddrv_read_tr(struct nand_chip *this, int page,
 		struct nanddrv_transfer *tr, int n_tr)
 {
 	unsigned char status;
-	int nbytes;
+	int ncycles;
 	unsigned char *buffer;
 
 	if(n_tr < 1)
@@ -89,10 +88,10 @@ int nanddrv_read_tr(struct nand_chip *this, int page,
 	nanddrv_send_cmd(this, 0x30);
 	while (1) {
 		buffer = tr->buffer;
-		nbytes = tr->nbytes;
-		while(nbytes > 0) {
+		ncycles = tr->nbytes;
+		while(ncycles > 0) {
 			*buffer = this->read_cycle(this);
-			nbytes--;
+			ncycles--;
 			buffer++;
 		}
 		n_tr--;
@@ -115,7 +114,7 @@ int nanddrv_write_tr(struct nand_chip *this, int page,
 		struct nanddrv_transfer *tr, int n_tr)
 {
 	unsigned char status;
-	int nbytes;
+	int ncycles;
 	unsigned char *buffer;
 
 	if (n_tr < 1)
@@ -125,11 +124,11 @@ int nanddrv_write_tr(struct nand_chip *this, int page,
 	nanddrv_send_addr(this, page, tr->offset);
 	while (1) {
 		buffer = tr->buffer;
-		nbytes = tr->nbytes;
+		ncycles = tr->nbytes;
 
-		while (nbytes > 0) {
+		while (ncycles> 0) {
 			this->write_cycle(this, *buffer);
-			nbytes--;
+			ncycles--;
 			buffer++;
 		}
 		n_tr--;

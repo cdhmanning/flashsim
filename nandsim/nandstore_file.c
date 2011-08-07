@@ -2,7 +2,6 @@
  * YAFFS: Yet Another Flash File System. A NAND-flash specific file system.
  *
  * Copyright (C) 2010-2011 Aleph One Ltd.
- *   for Toby Churchill Ltd and Brightstar Engineering
  *
  * Created by Charles Manning <charles@aleph1.co.uk>
  *
@@ -12,10 +11,6 @@
  */
 /*
  * Nand simulator modelled on a Samsung K9K2G08U0A 8-bit
- *
- * Page size 2k + 64
- * Block size 64 pages
- * Dev size 256 Mbytes
  *
  *  Need to implement basic commands first:
  *  Status

@@ -2,7 +2,6 @@
  * YAFFS: Yet Another Flash File System. A NAND-flash specific file system.
  *
  * Copyright (C) 2010-2011 Aleph One Ltd.
- *   for Toby Churchill Ltd and Brightstar Engineering
  *
  * Created by Charles Manning <charles@aleph1.co.uk>
  *
@@ -11,7 +10,8 @@
  * published by the Free Software Foundation.
  */
 /*
- * Nand simulator modelled on a Samsung K9K2G08U0A 8-bit
+ * Nand simulator modelled on a Samsung K9K2G08U0A 8-bit, but capable of
+ * simulating x16 access too.
  *
  * Page size 2k + 64
  * Block size 64 pages
@@ -27,7 +27,6 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-
 
 static int nandsim_debug = 0;
 
@@ -474,7 +473,7 @@ static void nandsim_dl_write(struct nandsim_private *ns, unsigned char val)
 	}
 }
 
-static unsigned char nandsim_dl_read(struct nandsim_private *ns)
+static unsigned nandsim_dl_read(struct nandsim_private *ns)
 {
 	unsigned char retval;
 	if(ns->reading_status){
@@ -545,9 +544,9 @@ static void nandsim_set_cle(struct nand_chip * this, int cle)
 	ns->cle = cle;
 }
 
-static unsigned char nandsim_read_cycle(struct nand_chip * this)
+static unsigned nandsim_read_cycle(struct nand_chip * this)
 {
-	unsigned char retval;
+	unsigned retval;
 	struct nandsim_private *ns =
 		(struct nandsim_private *)this->private_data;
 
@@ -563,7 +562,7 @@ static unsigned char nandsim_read_cycle(struct nand_chip * this)
 	return retval;
 }
 
-static void nandsim_write_cycle(struct nand_chip * this, unsigned char b)
+static void nandsim_write_cycle(struct nand_chip * this, unsigned b)
 {
 	struct nandsim_private *ns =
 		(struct nandsim_private *)this->private_data;
@@ -613,7 +612,7 @@ static void nandsim_idle_fn(struct nand_chip *this)
 	ns = ns;
 }
 
-struct nand_chip *nandsim_init(struct nand_store *store)
+struct nand_chip *nandsim_init(struct nand_store *store, int bus_width_bytes)
 {
 	struct nand_chip *chip = NULL;
 	struct nandsim_private *ns = NULL;
@@ -631,6 +630,8 @@ struct nand_chip *nandsim_init(struct nand_store *store)
 		chip->write_cycle = nandsim_write_cycle;
 		chip->check_busy = nandsim_check_busy;
 		chip->idle_fn = nandsim_idle_fn;
+
+		chip->bus_width = bus_width_bytes;
 
 		chip->blocks = ns->store->blocks;
 		chip->pages_per_block = ns->store->pages_per_block;

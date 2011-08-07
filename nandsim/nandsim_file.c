@@ -2,7 +2,6 @@
  * YAFFS: Yet Another Flash File System. A NAND-flash specific file system.
  *
  * Copyright (C) 2010-2011 Aleph One Ltd.
- *   for Toby Churchill Ltd and Brightstar Engineering
  *
  * Created by Charles Manning <charles@aleph1.co.uk>
  *
@@ -21,7 +20,8 @@ struct nand_chip *nandsim_file_init(const char *fname,
 				int blocks,
 				int pages_per_block,
 				int data_bytes_per_page,
-				int spare_bytes_per_page)
+				int spare_bytes_per_page,
+				int bus_width_bytes)
 {
 	struct nand_store *store;
 	struct nand_chip *chip = NULL;
@@ -30,7 +30,7 @@ struct nand_chip *nandsim_file_init(const char *fname,
 					data_bytes_per_page,
 					spare_bytes_per_page);
 	if(store)
-		chip = nandsim_init(store);
+		chip = nandsim_init(store, bus_width_bytes);
 
 	if(chip)
 		return chip;
