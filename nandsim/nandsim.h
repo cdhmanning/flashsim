@@ -16,6 +16,6 @@
 #define __NAND_SIM_H__
 #include "nand_store.h"
 #include "nand_chip.h"
-struct nand_chip *nandsim_init(struct nand_store *store, int bus_width_bytes);
+struct nand_chip *nandsim_init(struct nand_store *store, int bus_width_shift);
 void nandsim_set_debug(int d);
 #endif

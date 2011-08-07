@@ -87,12 +87,24 @@ int nanddrv_read_tr(struct nand_chip *this, int page,
 		return -1;
 	nanddrv_send_cmd(this, 0x30);
 	while (1) {
-		buffer = tr->buffer;
-		ncycles = tr->nbytes;
-		while(ncycles > 0) {
-			*buffer = this->read_cycle(this);
-			ncycles--;
-			buffer++;
+		if(this->bus_width_shift == 0) {
+			unsigned char *buffer = tr->buffer;
+
+			ncycles = tr->nbytes;
+			while (ncycles> 0) {
+				*buffer = this->read_cycle(this);
+				ncycles--;
+				buffer++;
+			}
+		} else {
+			unsigned short *buffer = tr->buffer;
+
+			ncycles = tr->nbytes >> 1;
+			while (ncycles> 0) {
+				*buffer = this->read_cycle(this);
+				ncycles--;
+				buffer++;
+			}
 		}
 		n_tr--;
 		tr++;
@@ -115,7 +127,6 @@ int nanddrv_write_tr(struct nand_chip *this, int page,
 {
 	unsigned char status;
 	int ncycles;
-	unsigned char *buffer;
 
 	if (n_tr < 1)
 		return 0;
@@ -123,13 +134,24 @@ int nanddrv_write_tr(struct nand_chip *this, int page,
 	nanddrv_send_cmd(this, 0x80);
 	nanddrv_send_addr(this, page, tr->offset);
 	while (1) {
-		buffer = tr->buffer;
-		ncycles = tr->nbytes;
+		if(this->bus_width_shift == 0) {
+			unsigned char *buffer = tr->buffer;
 
-		while (ncycles> 0) {
-			this->write_cycle(this, *buffer);
-			ncycles--;
-			buffer++;
+			ncycles = tr->nbytes;
+			while (ncycles> 0) {
+				this->write_cycle(this, *buffer);
+				ncycles--;
+				buffer++;
+			}
+		} else {
+			unsigned short *buffer = tr->buffer;
+
+			ncycles = tr->nbytes >> 1;
+			while (ncycles> 0) {
+				this->write_cycle(this, *buffer);
+				ncycles--;
+				buffer++;
+			}
 		}
 		n_tr--;
 		tr++;

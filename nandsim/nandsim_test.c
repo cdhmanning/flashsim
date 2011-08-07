@@ -17,7 +17,7 @@
 #include "nandsim.h"
 
 
-#define BUS_WIDTH_BYTES	2
+
 #define BUF_SIZE	(2048 + 64)
 unsigned char buffer0[BUF_SIZE];
 unsigned char buffer1[BUF_SIZE];
@@ -63,12 +63,14 @@ static void randomise_buffer(unsigned char *buffer)
 }
 
 
-int main(int argc, char *argv[])
+int run_test(int bus_width_shift)
 {
 	struct nand_chip * chip;
 	struct nanddrv_transfer tr[2];
 
-	chip = nandsim_file_init("nand-em-file", 256, 64, 2048, 64, BUS_WIDTH_BYTES);
+	chip = nandsim_file_init("nand-em-file",
+				256, 64, 2048, 64,
+				bus_width_shift);
 
 	nanddrv_erase(chip,0);
 
@@ -166,5 +168,16 @@ int main(int argc, char *argv[])
 	verify_page(chip, 4, 0xff);
 	verify_page(chip, 5, 0xff);
 
+	return 0;
+}
+
+
+int main(int argc, char *argv[])
+{
+	printf("Run test with x8 bus\n");
+	run_test(0);
+
+	printf("\n\nRun test with x16 bus\n");
+	run_test(1);
 	return 0;
 }

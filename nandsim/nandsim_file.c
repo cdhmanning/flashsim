@@ -21,7 +21,7 @@ struct nand_chip *nandsim_file_init(const char *fname,
 				int pages_per_block,
 				int data_bytes_per_page,
 				int spare_bytes_per_page,
-				int bus_width_bytes)
+				int bus_width_shift)
 {
 	struct nand_store *store;
 	struct nand_chip *chip = NULL;
@@ -30,7 +30,7 @@ struct nand_chip *nandsim_file_init(const char *fname,
 					data_bytes_per_page,
 					spare_bytes_per_page);
 	if(store)
-		chip = nandsim_init(store, bus_width_bytes);
+		chip = nandsim_init(store, bus_width_shift);
 
 	if(chip)
 		return chip;

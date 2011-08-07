@@ -34,6 +34,6 @@ struct nand_chip {
 	int pages_per_block;
 	int data_bytes_per_page;
 	int spare_bytes_per_page;
-	int bus_width;
+	int bus_width_shift;
 };
 #endif

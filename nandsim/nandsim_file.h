@@ -20,5 +20,5 @@ struct nand_chip *nandsim_file_init(const char *fname,
 				int pages_per_block,
 				int data_bytes_per_page,
 				int spare_bytes_per_page,
-				int bus_width_bytes);
+				int bus_width_shift);
 #endif

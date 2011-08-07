@@ -461,21 +461,29 @@ static void nandsim_al_write(struct nandsim_private *ns, unsigned char val)
 	}
 }
 
-static void nandsim_dl_write(struct nandsim_private *ns, unsigned char val)
+static void nandsim_dl_write(struct nandsim_private *ns, 
+				unsigned val,
+				int bus_width_shift)
 {
 	check_not_busy(ns, __LINE__);
 	if( ns->write_offset < 0 || ns->write_offset >= ns->buff_size){
 		debug(1, "Write at illegal buffer offset %d\n",
 				ns->write_offset);
-	} else {
-		ns->buffer[ns->write_offset] = val;
+	} else if(bus_width_shift == 0) {
+		ns->buffer[ns->write_offset] = val & 0xff;
+		ns->write_offset++;
+	} else if(bus_width_shift == 1) {
+		ns->buffer[ns->write_offset] = val & 0xff;
+		ns->write_offset++;
+		ns->buffer[ns->write_offset] = (val>>8) & 0xff;
 		ns->write_offset++;
 	}
 }
 
-static unsigned nandsim_dl_read(struct nandsim_private *ns)
+static unsigned nandsim_dl_read(struct nandsim_private *ns,
+				int bus_width_shift)
 {
-	unsigned char retval;
+	unsigned retval;
 	if(ns->reading_status){
 		/*
 		 * bit 0 == 0 pass, == 1 fail.
@@ -495,8 +503,13 @@ static unsigned nandsim_dl_read(struct nandsim_private *ns)
 	} else if(ns->read_offset < 0 || ns->read_offset >= ns->buff_size){
 		debug(1, "Read with no data available\n");
 		retval = 0;
-	} else {
+	} else if(bus_width_shift == 0){
 		retval = ns->buffer[ns->read_offset];
+		ns->read_offset++;
+	} else if(bus_width_shift == 1){
+		retval = ns->buffer[ns->read_offset];
+		ns->read_offset++;
+		retval |= (((unsigned)ns->buffer[ns->read_offset]) << 8);
 		ns->read_offset++;
 	}
 
@@ -556,7 +569,7 @@ static unsigned nandsim_read_cycle(struct nand_chip * this)
 			ns->ale ? "high" : "low");
 		retval = 0;
 	} else {
-		retval =nandsim_dl_read(ns);
+		retval =nandsim_dl_read(ns, this->bus_width_shift);
 	}
 	debug(5, "Read cycle returning %02X\n",retval);
 	return retval;
@@ -586,7 +599,7 @@ static void nandsim_write_cycle(struct nand_chip * this, unsigned b)
 	else if (ns->ale)
 		nandsim_al_write(ns, b);
 	else
-		nandsim_dl_write(ns, b);
+		nandsim_dl_write(ns, b, this->bus_width_shift);
 }
 
 static int nandsim_check_busy(struct nand_chip * this)
@@ -612,7 +625,7 @@ static void nandsim_idle_fn(struct nand_chip *this)
 	ns = ns;
 }
 
-struct nand_chip *nandsim_init(struct nand_store *store, int bus_width_bytes)
+struct nand_chip *nandsim_init(struct nand_store *store, int bus_width_shift)
 {
 	struct nand_chip *chip = NULL;
 	struct nandsim_private *ns = NULL;
@@ -631,7 +644,7 @@ struct nand_chip *nandsim_init(struct nand_store *store, int bus_width_bytes)
 		chip->check_busy = nandsim_check_busy;
 		chip->idle_fn = nandsim_idle_fn;
 
-		chip->bus_width = bus_width_bytes;
+		chip->bus_width_shift = bus_width_shift;
 
 		chip->blocks = ns->store->blocks;
 		chip->pages_per_block = ns->store->pages_per_block;
